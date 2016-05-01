@@ -1,0 +1,174 @@
+---
+title: "Practical Machine Learning Project"
+author: "Carlos Valle"
+date: "April 28, 2016"
+output: html_document
+---
+
+In this project, I will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the class of dumbbell biceps curl. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Data
+
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. We made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg).
+
+
+Dumbbell Biceps Curl in five different fashions: 
+Class A - exactly according to the specification
+Class B - throwing the elbows to the front 
+Class C - lifting the dumbbell only halfway 
+Class D - lowering the dumbbell only halfway
+Class E - throwing the hips to the front
+
+
+##The following code loads and prepares the data by removing variables with zero variance. 
+I removed the variables with no to very low variability because they are measurements that do not add to what we know about the participant. I also removed variables that identified the participants and the date and time of the exercise.
+
+```{r}
+#loads packages needed
+library(Hmisc)
+library(caret)
+library(gbm)
+library(RANN)
+
+
+#loads the data 
+datam <- read.csv("pml-training.csv")
+testcase <- read.csv("pml-testing.csv")
+
+#identifies cases with no variability
+nzv <- nearZeroVar(datam, saveMetrics= TRUE)
+
+#drop variables with no variability
+datam<- datam[,!nzv[,4]]
+testcase<- testcase[,!nzv[,4]]
+
+#deletes identifier variables 
+datam<- datam[,c(-1,-2,-3,-4,-5)]
+testcase<- testcase[,c(-1,-2,-3,-4,-5)]
+
+#Explores data set
+#hist.data.frame(datam[,1:20])
+#hist.data.frame(datam[,21:40])
+#hist.data.frame(datam[,41:60])
+#hist.data.frame(datam[,61:80])
+#hist.data.frame(datam[,81:95])
+
+```
+
+
+##Splits data into training, testing, and testing2 data sets for analysis. 
+The training set will be used to train the train the models and the preprocessing model. One Testing set will be used to train the combined prediction model. The other testing set will be used get an out of sample error for the combined predictors model. 
+
+
+```{r}
+
+#Creates data partitions for analysis
+set.seed(107)
+trainIndex = createDataPartition(y=datam$classe, p = 0.60, times = 1, list=FALSE)
+training = datam[trainIndex,]
+testing = datam[ -trainIndex,]
+
+set.seed(107)
+trainIndex2 = createDataPartition(y=testing$classe, p = 0.50, times = 1, list=FALSE)
+testing1 = testing[trainIndex2,]
+testing2 = testing[ -trainIndex2,]
+rm(testing, trainIndex2, trainIndex, datam, nzv)
+
+
+#creates imputation model using knnImpute for missing data
+preObj <- preProcess(training[,-95], method = "knnImpute")
+
+#applies the imputation model to all data partitions including the test set with the 20 cases
+trainBC <- predict(preObj, newdata = training[,-95])
+trainBC$classe <- training[,95]
+
+testBC1 <- predict(preObj, newdata = testing1[,-95])
+testBC1$classe <- testing1[,95]
+
+testBC2 <- predict(preObj, newdata = testing2[,-95]) 
+testBC2$classe <- testing2[,95]
+
+testcaseBC <- predict(preObj, newdata = testcase[,-95]) 
+testcaseBC$classe <- testcase[,95]
+
+
+```
+
+##Creates prediction models.
+Ensemble models increase the accuracy of prediction which is why I chose to combine gradient boosting and the random forest methods to create the final model. Random forest was applied to choose the best prediction from the two underlying methods. 
+
+From observing the distribution of the data during the exploratory data analysis phase, I noticed most variables were not normally distributed. Parametric methods would likely not work since most of the data was not normally distributed, so I chose random forest and gradient boosting.
+
+
+```{r}
+
+#creates gbm model 
+fitControl <- trainControl(method = "repeatedcv", number = 3, repeats = 1, verboseIter = FALSE, returnResamp = "all")
+set.seed(33833)
+modFitgbm <- train(classe ~ ., method="gbm",data=trainBC,verbose=FALSE,trControl = fitControl)
+
+#creates random forest model 
+set.seed(33833)
+modFitrf <- train(classe ~ ., method="rf",data=trainBC, verbose=FALSE,trControl = fitControl)
+
+#predict using the gradient boosting and the random forest trained models on the test set
+predgbm<- predict(modFitgbm, testBC1)
+predrf<- predict(modFitrf, testBC1)
+
+#creates dataframe using the predicted model and the actual values for the test partition
+newM<- data.frame(pred1=predgbm, pred2=predrf, classe=testBC1$classe)
+
+#trains the model using a random forest method and the data frame from the two previous models to create an ensemble model 
+comboModFit <- train(classe ~ ., method="rf", data = newM)
+
+#applies the combined predictor model to first test model
+combPred <- predict(comboModFit, newM)
+
+# Calculates Stacked Model Accuracy
+1-(sum((combPred==testBC1$classe))/length(combPred))
+
+```
+
+##This applies the combined predictor model to 2nd test data partition to get out of sample error and to cross validate the model.
+
+
+```{r}
+
+#out of sample accuracy
+pred1V <- predict(modFitgbm,testBC2)
+pred2V <- predict(modFitrf,testBC2)
+predVDF <- data.frame(pred1=pred1V,pred2=pred2V)
+combPredV <- predict(comboModFit, predVDF)
+
+#out of sample error
+1-(sum((combPredV==testBC2$classe))/length(combPredV))
+
+rm(pred1V, pred2V, predVDF, combPredV)
+
+```
+
+##This applies the combined predictor model to 20 cases for the course quiz. 
+
+
+```{r}
+
+pred1V <- predict(modFitgbm,testcaseBC)
+pred2V <- predict(modFitrf,testcaseBC)
+predVDF <- data.frame(pred1=pred1V,pred2=pred2V)
+combPredV <- predict(comboModFit, predVDF)
+
+#the predictions for the 20 cases are:
+combPredV
+
+
+```
+
