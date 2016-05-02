@@ -220,6 +220,38 @@ combPredV &lt;- predict(comboModFit, predVDF)
 #out of sample error
 1-(sum((combPredV==testBC2$classe))/length(combPredV))</code></pre>
 <pre><code>## [1] 0.002803977</code></pre>
+<pre class="r"><code>confusionMatrix(testBC2$classe,combPredV)</code></pre>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 1115    0    0    0    1
+##          B    0  758    1    0    0
+##          C    0    4  680    0    0
+##          D    0    0    2  641    0
+##          E    0    0    0    3  718
+## 
+## Overall Statistics
+##                                          
+##                Accuracy : 0.9972         
+##                  95% CI : (0.995, 0.9986)
+##     No Information Rate : 0.2842         
+##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16      
+##                                          
+##                   Kappa : 0.9965         
+##  Mcnemar's Test P-Value : NA             
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity            1.0000   0.9948   0.9956   0.9953   0.9986
+## Specificity            0.9996   0.9997   0.9988   0.9994   0.9991
+## Pos Pred Value         0.9991   0.9987   0.9942   0.9969   0.9958
+## Neg Pred Value         1.0000   0.9987   0.9991   0.9991   0.9997
+## Prevalence             0.2842   0.1942   0.1741   0.1642   0.1833
+## Detection Rate         0.2842   0.1932   0.1733   0.1634   0.1830
+## Detection Prevalence   0.2845   0.1935   0.1744   0.1639   0.1838
+## Balanced Accuracy      0.9998   0.9972   0.9972   0.9974   0.9988</code></pre>
 <pre class="r"><code>rm(pred1V, pred2V, predVDF, combPredV)</code></pre>
 </div>
 <div id="this-applies-the-combined-predictor-model-to-20-cases-for-the-course-quiz." class="section level2">
